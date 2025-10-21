@@ -89,3 +89,82 @@ cd /test_ws/
 source ./install/setup.sh # adjust to used shell
 ros2 run genz-icp-to-hdmapping listener <recorded_bag> <output_dir>
 ```
+
+## Running with Docker
+
+To run the complete pipeline using Docker:
+
+### 1. Build the Docker image:
+
+```shell
+./build-docker.sh
+```
+
+### 2. Convert ROS1 bags to ROS2 format (if needed):
+
+```shell
+./run_docker_convert_to_ros2.sh
+```
+
+Note: Only run this step if your dataset contains ROS1 `.bag` files that need to be converted to ROS2 format.
+
+After conversion:
+
+```
+data
+└── ConSLAM
+    ├── sequence1
+    │   ├── converted
+    │   │   ├── converted.db3
+    │   │   └── metadata.yaml
+    │   ├── Copy of recording.bag
+    ├── sequence2
+    │   ├── converted
+    │   │   ├── converted.db3
+    │   │   └── metadata.yaml
+    │   ├── Copy of recording.bag
+```
+
+
+
+### 3. Process all sequences:
+
+```shell
+./run_all_sequences.sh
+```
+
+This script runs the GenZ-ICP odometry processing for all sequences using Docker Compose.
+
+### 4. Convert results to HDMapping format:
+
+```shell
+./run_docker_convert_result_to_hdmapping.sh
+```
+
+This script converts the recorded GenZ-ICP results to HDMapping-compatible format for all processed sequences.
+
+### Results
+
+```
+data
+└── ConSLAM
+    ├── sequence1
+    │   ├── converted
+    │   │   ├── converted.db3
+    │   │   └── metadata.yaml
+    │   ├── Copy of recording.bag
+    │   ├── results-genz-icp
+    │   │   └── rosbag2_2025_10_20-21_08_46
+    │   │       ├── hdmapping
+    │   │       └── rosbag2_2025_10_20-21_08_46_0.mcap
+    ├── sequence2
+    │   ├── converted
+    │   │   ├── converted.db3
+    │   │   └── metadata.yaml
+    │   ├── Copy of recording.bag
+    │   ├── results-genz-icp
+    │   │   └── rosbag2_2025_10_20-21_16_05
+    │   │       ├── hdmapping
+    │   │       └── rosbag2_2025_10_20-21_16_05_0.mcap
+```
+
