@@ -7,12 +7,14 @@ set -e
 
 echo "Running all sequences (1-5) sequentially..."
 
-for i in {1..5}; do
+for SEQUENCE_NUM in {1..5}; do
     echo "=========================================="
     echo "Running sequence $i..."
+    export INPUT_BAG_DIRECTORY="./data/ConSLAM/sequence${SEQUENCE_NUM}/converted/"
+    echo "INPUT_BAG_DIRECTORY: $INPUT_BAG_DIRECTORY"
     echo "=========================================="
     
-    SEQUENCE_NUM=$i docker compose up
+    SEQUENCE_NUM=$SEQUENCE_NUM docker compose up
     
     echo "Sequence $i completed."
     echo ""
