@@ -14,7 +14,7 @@ for SEQUENCE_NUM in {1..5}; do
     echo "INPUT_BAG_DIRECTORY: $INPUT_BAG_DIRECTORY"
     echo "=========================================="
     
-    SEQUENCE_NUM=$SEQUENCE_NUM docker compose up
+    INPUT_BAG_DIRECTORY=$INPUT_BAG_DIRECTORY docker compose up
     
     echo "Sequence $i completed."
     echo ""

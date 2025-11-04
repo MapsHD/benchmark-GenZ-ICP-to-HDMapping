@@ -182,8 +182,8 @@ int main(int argc, char **argv)
             
                 if (cloud_msg->header.stamp.sec != 0 || cloud_msg->header.stamp.nanosec != 0)
                 {
-                    uint64_t sec_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1000ULL;
-                    uint64_t ns_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) / 1'000'000ULL;
+                    uint64_t sec_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1'000'000ULL;
+                    uint64_t ns_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) / 1'000ULL;
                     point_global.timestamp = sec_in_ms + ns_in_ms;
                 }
             
@@ -224,9 +224,9 @@ int main(int argc, char **argv)
             TrajectoryPose pose;
             
             // Store timestamp in nanoseconds
-            uint64_t sec_in_ns = static_cast<uint64_t>(odom_msg->header.stamp.sec) * 1'000'000'000ULL;
-            uint64_t ns = static_cast<uint64_t>(odom_msg->header.stamp.nanosec);
-            pose.timestamp_ns = sec_in_ns + ns;
+            uint64_t sec_in_ms = static_cast<uint64_t>(odom_msg->header.stamp.sec) * 1'000'000ULL;
+            uint64_t ms = static_cast<uint64_t>(odom_msg->header.stamp.nanosec)/ 1'000ULL;
+            pose.timestamp_ns = sec_in_ms + ms;
         
             pose.x_m = x;
             pose.y_m = y;
