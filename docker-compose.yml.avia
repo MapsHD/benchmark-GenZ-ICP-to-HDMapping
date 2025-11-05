@@ -1,6 +1,6 @@
 services:
   genz-icp:
-    image: genzicp2hdmapping:latest
+    image: ghcr.io/mapshd/genzicp2hdmapping:latest
     container_name: genzicp2hdmapping
     volumes:
       - ${INPUT_BAG_DIRECTORY}:/data:ro
@@ -12,7 +12,7 @@ services:
     restart: "no"
 
   bag-recorder:
-    image: genzicp2hdmapping:latest
+    image: ghcr.io/mapshd/genzicp2hdmapping:latest
     container_name: genzicp2hdmapping-recorder
     volumes:
       - ${INPUT_BAG_DIRECTORY}:/data:rw
