@@ -122,9 +122,9 @@ int main(int argc, char **argv)
             
                 if (cloud_msg->header.stamp.sec != 0 || cloud_msg->header.stamp.nanosec != 0)
                 {
-                    uint64_t sec_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1000ULL;
-                    uint64_t ns_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) / 1'000'000ULL;
-                    point_global.timestamp = sec_in_ms + ns_in_ms;
+                    const auto sec_in_ns = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1'000'000'000ULL;
+                    const auto ns = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) ;
+                    point_global.timestamp = sec_in_ns + ns;
                 }
             
                 point_global.point = Eigen::Vector3d(point.x, point.y, point.z);
@@ -163,9 +163,9 @@ int main(int argc, char **argv)
         
             TrajectoryPose pose;
             
-            uint64_t sec_in_ms = static_cast<uint64_t>(odom_msg->header.stamp.sec) * 1000ULL;
-            uint64_t ns_in_ms = static_cast<uint64_t>(odom_msg->header.stamp.nanosec) / 1'000'000ULL;
-            pose.timestamp_ns = sec_in_ms + ns_in_ms;
+            const auto sec_in_ns = static_cast<uint64_t>(odom_msg->header.stamp.sec) * 1'000'000'000ULL;
+            const auto ns = static_cast<uint64_t>(odom_msg->header.stamp.nanosec) ;
+            pose.timestamp_ns = sec_in_ns + ns;
         
             pose.x_m = x;
             pose.y_m = y;
@@ -393,7 +393,7 @@ int main(int argc, char **argv)
             // auto pose = worker_data_concatenated[i].intermediate_trajectory[0].inverse() * worker_data_concatenated[i].intermediate_trajectory[j];
 
             outfile
-                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns * 1e6 << " " << std::setprecision(10)
+                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns << " " << std::setprecision(10)
 
                 << pose(0, 0) << " "
                 << pose(0, 1) << " "
@@ -415,7 +415,7 @@ int main(int argc, char **argv)
                 // << chunks_trajectory[i][j].qx << " "   // qx
                 // << chunks_trajectory[i][j].qy << " "   // qy
                 // << chunks_trajectory[i][j].qz << " "   // qz
-                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns * 1e6 << " " << std::setprecision(10)
+                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns << " " << std::setprecision(10)
                 << std::endl;
         }
         outfile.close();
