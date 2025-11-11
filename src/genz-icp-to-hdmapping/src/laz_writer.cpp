@@ -117,7 +117,7 @@ bool saveLaz(const std::string &filename, const std::vector<Point3Di> &points_gl
     {
         const auto &p = points_global[i];
         point->intensity = p.intensity;
-        point->gps_time = p.timestamp * 1e9;
+        point->gps_time = p.timestamp / 1e9;
         p_count++;
         coordinates[0] = p.point.x();
         coordinates[1] = p.point.y();
