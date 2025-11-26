@@ -1,10 +1,11 @@
 ARG ROS_DISTRO=jazzy
 FROM ros:${ROS_DISTRO}-ros-base-noble
+ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-lc"]
 
-RUN apt update
-RUN apt install -y nlohmann-json3-dev libpcl-dev python3-pip
+RUN apt-get update
+RUN apt-get install -y nlohmann-json3-dev libpcl-dev python3-pip
 RUN pip3 install rosbags --break-system-packages
 RUN mkdir -p /test_ws/src
 COPY src/ /test_ws/src
