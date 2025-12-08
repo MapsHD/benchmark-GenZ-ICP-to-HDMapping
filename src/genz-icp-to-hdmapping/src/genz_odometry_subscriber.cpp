@@ -146,8 +146,10 @@ int main(int argc, char **argv)
     {
         rosbag2_storage::SerializedBagMessageSharedPtr msg = bag.read_next();
 
-        if (msg->topic_name == "/genz/local_map") {
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Received message on topic: /genz/local_map");
+        // Process per-frame point clouds from /genz/frame topic
+        // This topic publishes per-frame registered points (always enabled, not dependent on visualize)
+        if (msg->topic_name == "/genz/frame") {
+            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Received message on topic: /genz/frame");
         
             rclcpp::SerializedMessage serialized_msg(*msg->serialized_data);
             auto cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
@@ -155,15 +157,14 @@ int main(int argc, char **argv)
             serializationPointCloud2.deserialize_message(&serialized_msg, cloud_msg.get());
         
             if (!cloud_msg || cloud_msg->data.empty()) {
-                RCLCPP_ERROR(rclcpp::get_logger("GenzFrame"), "Error: Empty PointCloud2 message!");
-                return 1;
+                // Empty messages are allowed - some frames may have no registered points
+                RCLCPP_DEBUG(rclcpp::get_logger("GenzFrame"), "Empty PointCloud2 message on /genz/frame");
+                continue;
             }
     
-            pcl::PointCloud<pcl::PointXYZ> cloud;
-            size_t num_points = cloud_msg->width * cloud_msg->height;  // Suma punktów
-            uint8_t* data_ptr = cloud_msg->data.data();
+            size_t num_points = cloud_msg->width * cloud_msg->height;
     
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processing %zu points", num_points);
+            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processing %zu points from /genz/frame", num_points);
             
             sensor_msgs::PointCloud2ConstIterator<float> iter_x(*cloud_msg, "x");
             sensor_msgs::PointCloud2ConstIterator<float> iter_y(*cloud_msg, "y");
@@ -171,33 +172,25 @@ int main(int argc, char **argv)
 
             for (size_t i = 0; i < num_points; ++i, ++iter_x, ++iter_y, ++iter_z)
             {
-                pcl::PointXYZ point;
-                point.x = *iter_x;
-                point.y = *iter_y;
-                point.z = *iter_z;
-            
-                cloud.points.push_back(point);
-            
                 Point3Di point_global;
             
                 if (cloud_msg->header.stamp.sec != 0 || cloud_msg->header.stamp.nanosec != 0)
                 {
                     const auto sec_in_ns = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1'000'000'000ULL;
-                    const auto ns = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) ;
+                    const auto ns = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec);
                     point_global.timestamp = sec_in_ns + ns;
                 }
             
-                point_global.point = Eigen::Vector3d(point.x, point.y, point.z);
+                point_global.point = Eigen::Vector3d(*iter_x, *iter_y, *iter_z);
                 point_global.intensity = 0;  
-                point_global.index_pose = static_cast<int>(i);
+                point_global.index_pose = static_cast<int>(points_global.size());
                 point_global.lidarid = 0;
                 point_global.index_point = static_cast<int>(i);
             
                 points_global.push_back(point_global);
             }
-            
 
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processed %zu points!", cloud.points.size());
+            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Added %zu points (total: %zu)", num_points, points_global.size());
         }
         
         if (msg->topic_name == "/genz/odometry") {
