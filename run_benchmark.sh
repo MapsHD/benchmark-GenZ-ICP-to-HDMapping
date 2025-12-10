@@ -82,7 +82,7 @@ cd "$SCRIPT_DIR"
 
 # Run docker compose
 echo "Starting GenZ-ICP processing..."
-docker compose -f "$COMPOSE_FILE" up
+docker compose -f "$COMPOSE_FILE" up --abort-on-container-exit --exit-code-from bag-recorder
 
 # Run conversion to hdmapping format
 echo ""
