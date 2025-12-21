@@ -4,7 +4,7 @@
 # Usage: ./run_benchmark.sh <config_name> <input_bag_directory> [compose_file]
 #
 # Examples:
-#   ./run_benchmark.sh avia /path/to/data/Pipes/AVIA/ros2bag/mandeye_bag/
+#   ./run_benchmark.sh avia /path/to/data/Pipes/AVIA/ros2bag/
 #   ./run_benchmark.sh conslam /path/to/data/ConSLAM/sequence1/converted/
 #   From main repo: ./methods/benchmark-GenZ-ICP-to-HDMapping/run_benchmark.sh avia /path/to/data/
 
@@ -28,7 +28,7 @@ usage() {
     echo "  compose_file         Docker compose file (default: docker-compose.yml)"
     echo ""
     echo "Examples:"
-    echo "  $0 avia /path/to/data/Pipes/AVIA/ros2bag/mandeye_bag/"
+    echo "  $0 avia /path/to/data/Pipes/AVIA/ros2bag/"
     echo "  $0 conslam /path/to/data/ConSLAM/sequence1/converted/"
     echo ""
     echo "Available configs:"
@@ -69,12 +69,19 @@ set +a  # Disable auto-export mode
 # (Variables from config file are already exported from the set -a block above)
 export INPUT_BAG_DIRECTORY="$(realpath "$INPUT_BAG_DIRECTORY")"
 
+# New layout: put results into EXP_DIR/results/<OUTPUT_DIR>
+EXP_DIR="$(realpath "$(dirname "$INPUT_BAG_DIRECTORY")")"
+OUTPUT_BASE_DIR="${EXP_DIR}/results"
+mkdir -p "$OUTPUT_BASE_DIR"
+export OUTPUT_BASE_DIR="$(realpath "$OUTPUT_BASE_DIR")"
+
 echo "=========================================="
 echo "Running GenZ-ICP benchmark"
 echo "Config: $CONFIG_NAME"
 echo "Input directory: $INPUT_BAG_DIRECTORY"
 echo "Input topic: $INPUT_TOPIC"
-echo "Output directory: $OUTPUT_DIR"
+echo "Output base directory: $OUTPUT_BASE_DIR"
+echo "Output directory name: $OUTPUT_DIR"
 echo "=========================================="
 
 # Change to script directory for docker compose
@@ -89,7 +96,7 @@ echo ""
 echo "=========================================="
 echo "Converting results to hdmapping format..."
 echo "=========================================="
-LATEST_ROSBAG2_FOLDER="${INPUT_BAG_DIRECTORY}/${OUTPUT_DIR}/"
+LATEST_ROSBAG2_FOLDER="${OUTPUT_BASE_DIR}/${OUTPUT_DIR}/"
 
 if [ ! -d "$LATEST_ROSBAG2_FOLDER" ]; then
     echo "Error: Results folder not found: $LATEST_ROSBAG2_FOLDER"
