@@ -15,10 +15,19 @@
 #include "rclcpp/serialization.hpp"
 #include "laz_writer.hpp"
 
+struct PointBucketIndexPair {
+
+        int index_of_point = 0;
+
+        long long unsigned int index_of_bucket = 0;
+
+        //int index_pose;
+
+    };
 
 struct TrajectoryPose
 {
-    uint64_t timestamp_ns;
+    double timestamp_ns;
     double x_m;
     double y_m;
     double z_m;
@@ -27,73 +36,69 @@ struct TrajectoryPose
     double qy;
     double qz;
     Eigen::Affine3d pose;
-    double om_rad;  // Roll (omega)
-    double fi_rad;  // Pitch (phi)
-    double ka_rad;  // Yaw (kappa)
 };
-
-struct TaitBryanPose
-{
-    double px;
-    double py;
-    double pz;
-    double om;
-    double fi;
-    double ka;
-};
-
-inline double deg2rad(double deg) {
-	return (deg * M_PI) / 180.0;
-}
-
-inline double rad2deg(double rad) {
-	return (rad * 180.0) / M_PI;
-}
-
-inline TaitBryanPose pose_tait_bryan_from_affine_matrix(Eigen::Affine3d m){
-	TaitBryanPose pose;
-
-	pose.px = m(0,3);
-	pose.py = m(1,3);
-	pose.pz = m(2,3);
-
-	if (m(0,2) < 1) {
-		if (m(0,2) > -1) {
-			//case 1
-			pose.fi = asin(m(0,2));
-			pose.om = atan2(-m(1,2), m(2,2));
-			pose.ka = atan2(-m(0,1), m(0,0));
-
-			return pose;
-		}
-		else //r02 = −1
-		{
-			//case 2
-			// not a unique solution: thetaz − thetax = atan2 ( r10 , r11 )
-			pose.fi = -M_PI / 2.0;
-			pose.om = -atan2(m(1,0), m(1,1));
-			pose.ka = 0;
-			return pose;
-		}
-	}
-	else {
-		//case 3
-		// r02 = +1
-		// not a unique solution: thetaz + thetax = atan2 ( r10 , r11 )
-		pose.fi = M_PI / 2.0;
-		pose.om = atan2(m(1,0), m(1,1));
-		pose.ka = 0.0;
-		return pose;
-	}
-
-	return pose;
-}
 
 namespace fs = std::filesystem;
 std::vector<Point3Di> points_global;
 
 std::vector<TrajectoryPose> trajectory;
 std::vector<std::vector<TrajectoryPose>> chunks_trajectory;
+
+
+unsigned long long int get_index(const int16_t x, const int16_t y, const int16_t z)
+{
+    return ((static_cast<unsigned long long int>(x) << 32) & (0x0000FFFF00000000ull)) |
+           ((static_cast<unsigned long long int>(y) << 16) & (0x00000000FFFF0000ull)) |
+           ((static_cast<unsigned long long int>(z) << 0) & (0x000000000000FFFFull));
+}
+
+// this function provides unique index for input point p and 3D space decomposition into buckets b
+unsigned long long int get_rgd_index(const Eigen::Vector3d p, const Eigen::Vector3d b)
+{
+    int16_t x = static_cast<int16_t>(p.x() / b.x());
+    int16_t y = static_cast<int16_t>(p.y() / b.y());
+    int16_t z = static_cast<int16_t>(p.z() / b.z());
+    return get_index(x, y, z);
+}
+
+std::vector<Point3Di> decimate(const std::vector<Point3Di>& points, double bucket_x, double bucket_y, double bucket_z)
+{
+    // std::cout << "points.size before decimation: " << points.size() << std::endl;
+    Eigen::Vector3d b(bucket_x, bucket_y, bucket_z);
+    std::vector<Point3Di> out;
+
+    std::vector<PointBucketIndexPair> ip;
+    ip.resize(points.size());
+    out.reserve(points.size());
+
+    for (int i = 0; i < points.size(); i++)
+    {
+        ip[i].index_of_point = i;
+        ip[i].index_of_bucket = get_rgd_index(points[i].point, b);
+    }
+    std::sort(ip.begin(), ip.end(), [](const PointBucketIndexPair& a, const PointBucketIndexPair& b)
+        { return a.index_of_bucket < b.index_of_bucket; });
+
+    if (ip.size() != 0)
+        out.emplace_back(points[ip[0].index_of_point]);
+
+    for (int i = 1; i < ip.size(); i++)
+        if (ip[i - 1].index_of_bucket != ip[i].index_of_bucket)
+            out.emplace_back(points[ip[i].index_of_point]);
+
+    // std::cout << "points.size after decimation: " << out.size() << std::endl;
+    return out;
+}
+
+std::vector<Point3Di>  downsaple(const std::vector<Point3Di> &points)
+{
+    std::vector<Point3Di> new_points;
+
+    new_points = decimate(points, 0.1, 0.1, 0.1);
+
+
+    return new_points;
+}
 
 
 bool save_poses(const std::string file_name, std::vector<Eigen::Affine3d> m_poses, std::vector<std::string> filenames)
@@ -145,11 +150,9 @@ int main(int argc, char **argv)
     while (bag.has_next())
     {
         rosbag2_storage::SerializedBagMessageSharedPtr msg = bag.read_next();
-
-        // Process per-frame point clouds from /genz/frame topic
-        // This topic publishes per-frame registered points (always enabled, not dependent on visualize)
-        if (msg->topic_name == "/genz/frame") {
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Received message on topic: /genz/frame");
+        std::string genz_frame_topic = "/genz/local_map";
+        if (msg->topic_name == genz_frame_topic) {
+            RCLCPP_INFO(rclcpp::get_logger("GenZFrame"), "Received message on topic: %s", genz_frame_topic.c_str());
         
             rclcpp::SerializedMessage serialized_msg(*msg->serialized_data);
             auto cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
@@ -157,14 +160,16 @@ int main(int argc, char **argv)
             serializationPointCloud2.deserialize_message(&serialized_msg, cloud_msg.get());
         
             if (!cloud_msg || cloud_msg->data.empty()) {
-                // Empty messages are allowed - some frames may have no registered points
-                RCLCPP_DEBUG(rclcpp::get_logger("GenzFrame"), "Empty PointCloud2 message on /genz/frame");
-                continue;
+                RCLCPP_ERROR(rclcpp::get_logger("GenZFrame"), "Error: Empty PointCloud2 message!");
+                return 1;
             }
     
+            pcl::PointCloud<pcl::PointXYZ> cloud;
             size_t num_points = cloud_msg->width * cloud_msg->height;
+            std::cout << "num_points " << num_points << std::endl;
+            // uint8_t* data_ptr = cloud_msg->data.data();
     
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processing %zu points from /genz/frame", num_points);
+            RCLCPP_INFO(rclcpp::get_logger("GenZFrame"), "Processing %zu points", num_points);
             
             sensor_msgs::PointCloud2ConstIterator<float> iter_x(*cloud_msg, "x");
             sensor_msgs::PointCloud2ConstIterator<float> iter_y(*cloud_msg, "y");
@@ -172,36 +177,47 @@ int main(int argc, char **argv)
 
             for (size_t i = 0; i < num_points; ++i, ++iter_x, ++iter_y, ++iter_z)
             {
+                pcl::PointXYZ point;
+                point.x = *iter_x;
+                point.y = *iter_y;
+                point.z = *iter_z;
+            
+                cloud.points.push_back(point);
+            
                 Point3Di point_global;
             
                 if (cloud_msg->header.stamp.sec != 0 || cloud_msg->header.stamp.nanosec != 0)
                 {
-                    const auto sec_in_ns = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1'000'000'000ULL;
-                    const auto ns = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec);
-                    point_global.timestamp = sec_in_ns + ns;
+                    uint64_t sec_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1000ULL;
+                    uint64_t ns_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) / 1'000'000ULL;
+                    point_global.timestamp = sec_in_ms + ns_in_ms;
                 }
             
-                point_global.point = Eigen::Vector3d(*iter_x, *iter_y, *iter_z);
+                point_global.point = Eigen::Vector3d(point.x, point.y, point.z);
                 point_global.intensity = 0;  
-                point_global.index_pose = static_cast<int>(points_global.size());
+                point_global.index_pose = static_cast<int>(i);
                 point_global.lidarid = 0;
                 point_global.index_point = static_cast<int>(i);
             
                 points_global.push_back(point_global);
             }
 
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Added %zu points (total: %zu)", num_points, points_global.size());
+            //before downsample
+	        RCLCPP_INFO(rclcpp::get_logger("GenZFrame"), "Processed %zu points! Before downsample", points_global.size());
+            //after downsample
+            points_global = downsaple(points_global);
+            RCLCPP_INFO(rclcpp::get_logger("GenZFrame"), "Processed %zu points! After downsample", points_global.size());
         }
         
         if (msg->topic_name == "/genz/odometry") {
-            RCLCPP_INFO(rclcpp::get_logger("GenzOdometry"), "Received message on topic: /genz/odometry");
+            RCLCPP_INFO(rclcpp::get_logger("GenZOdometry"), "Received message on topic: /genz/odometry");
         
             auto odom_msg = std::make_shared<nav_msgs::msg::Odometry>();
             rclcpp::SerializedMessage serialized_msg(*msg->serialized_data);
             serializationOdom.deserialize_message(&serialized_msg, odom_msg.get());
         
             if (!odom_msg) {
-                RCLCPP_ERROR(rclcpp::get_logger("GenzOdometry"), "Odometry message deserialization error!");
+                RCLCPP_ERROR(rclcpp::get_logger("GenZOdometry"), "Odometry message deserialization error!");
                 return 1;
             }
         
@@ -216,9 +232,9 @@ int main(int argc, char **argv)
         
             TrajectoryPose pose;
             
-            const auto sec_in_ns = static_cast<uint64_t>(odom_msg->header.stamp.sec) * 1'000'000'000ULL;
-            const auto ns = static_cast<uint64_t>(odom_msg->header.stamp.nanosec) ;
-            pose.timestamp_ns = sec_in_ns + ns;
+            uint64_t sec_in_ms = static_cast<uint64_t>(odom_msg->header.stamp.sec) * 1000ULL;
+            uint64_t ns_in_ms = static_cast<uint64_t>(odom_msg->header.stamp.nanosec) / 1'000'000ULL;
+            pose.timestamp_ns = sec_in_ms + ns_in_ms;
         
             pose.x_m = x;
             pose.y_m = y;
@@ -237,15 +253,9 @@ int main(int argc, char **argv)
             pose.pose.translation() = trans;
             pose.pose.linear() = q.toRotationMatrix();
 
-            // Calculate Tait-Bryan angles using the original function
-            TaitBryanPose tb = pose_tait_bryan_from_affine_matrix(pose.pose);
-            pose.om_rad = tb.om;
-            pose.fi_rad = tb.fi;
-            pose.ka_rad = tb.ka;
-
             trajectory.push_back(pose);
         
-            RCLCPP_INFO(rclcpp::get_logger("GenzOdometry"), "Added position to trajectory: x=%.3f, y=%.3f, z=%.3f", x, y, z);
+            RCLCPP_INFO(rclcpp::get_logger("GenZOdometry"), "Added position to trajectory: x=%.3f, y=%.3f, z=%.3f", x, y, z);
         }
     }
 
@@ -427,7 +437,7 @@ int main(int argc, char **argv)
             return 1;
         }
 
-        outfile << "timestamp_nanoseconds pose00 pose01 pose02 pose03 pose10 pose11 pose12 pose13 pose20 pose21 pose22 pose23 timestampUnix_nanoseconds om_rad fi_rad ka_rad" << std::endl;
+        outfile << "timestamp_nanoseconds pose00 pose01 pose02 pose03 pose10 pose11 pose12 pose13 pose20 pose21 pose22 pose23 timestampUnix_nanoseconds" << std::endl;
 
         Eigen::Vector3d trans(chunks_trajectory[i][0].x_m, chunks_trajectory[i][0].y_m, chunks_trajectory[i][0].z_m);
         Eigen::Quaterniond q(chunks_trajectory[i][0].qw, chunks_trajectory[i][0].qx, chunks_trajectory[i][0].qy, chunks_trajectory[i][0].qz);
@@ -452,7 +462,7 @@ int main(int argc, char **argv)
             // auto pose = worker_data_concatenated[i].intermediate_trajectory[0].inverse() * worker_data_concatenated[i].intermediate_trajectory[j];
 
             outfile
-                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns << " " << std::setprecision(10)
+                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns * 1e6 << " " << std::setprecision(10)
 
                 << pose(0, 0) << " "
                 << pose(0, 1) << " "
@@ -474,10 +484,7 @@ int main(int argc, char **argv)
                 // << chunks_trajectory[i][j].qx << " "   // qx
                 // << chunks_trajectory[i][j].qy << " "   // qy
                 // << chunks_trajectory[i][j].qz << " "   // qz
-                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns << " " << std::setprecision(10)
-                << chunks_trajectory[i][j].om_rad << " "
-                << chunks_trajectory[i][j].fi_rad << " "
-                << chunks_trajectory[i][j].ka_rad << " "
+                << std::setprecision(20) << chunks_trajectory[i][j].timestamp_ns * 1e6 << " " << std::setprecision(10)
                 << std::endl;
         }
         outfile.close();
