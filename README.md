@@ -30,7 +30,7 @@ Prepare recorded bag with estimated odometry:
 
 In first terminal record bag:
 ```shell
-ros2 bag record /genz/local_map /genz/odometry
+ros2 bag record /livox/pointcloud /genz/odometry /tf /tf_static
 ```
 
  start odometry:

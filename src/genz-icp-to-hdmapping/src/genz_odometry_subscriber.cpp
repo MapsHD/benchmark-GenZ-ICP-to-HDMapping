@@ -14,6 +14,9 @@
 #include "rosbag2_cpp/reader.hpp"
 #include "rclcpp/serialization.hpp"
 #include "laz_writer.hpp"
+#include <tf2_ros/buffer.h>
+#include <tf2_msgs/msg/tf_message.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 
 struct TrajectoryPose
@@ -66,6 +69,7 @@ bool save_poses(const std::string file_name, std::vector<Eigen::Affine3d> m_pose
 
 int main(int argc, char **argv)
 {
+    using namespace std::chrono_literals;
     if (argc < 3)
     {
         std::cout << "Usage: " << argv[0] << " <input_bag> <output_directory>" << std::endl;
@@ -81,12 +85,43 @@ int main(int argc, char **argv)
     rosbag2_cpp::Reader bag;
   
     bag.open(input_bag);
-  
+    auto clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
+    tf2_ros::Buffer buffer(clock, tf2::Duration(24h));
+    bag.open(input_bag);
+
+    // fill tf buffer
+    int num_tf_msgs = 0;
+    while (bag.has_next()) {
+        auto bag_msg = bag.read_next();
+
+        if (bag_msg->topic_name != "/tf" && bag_msg->topic_name != "/tf_static")
+            continue;
+
+        auto tf_msg = std::make_shared<tf2_msgs::msg::TFMessage>();
+        rclcpp::SerializedMessage serialized_msg(*bag_msg->serialized_data);
+        rclcpp::Serialization<tf2_msgs::msg::TFMessage> serializer;
+        serializer.deserialize_message(&serialized_msg, tf_msg.get());
+
+        bool is_static = (bag_msg->topic_name == "/tf_static");
+
+        for (auto &tf : tf_msg->transforms) {
+            try {
+                buffer.setTransform(tf, "rosbag_loader", is_static);
+                num_tf_msgs++;
+            } catch (const tf2::TransformException &ex) {
+                RCLCPP_ERROR(rclcpp::get_logger("KissFrame"), "Failed to set TF: %s", ex.what());
+            }
+        }
+    }
+    RCLCPP_INFO(rclcpp::get_logger("KissFrame"), "Filed tf buffer with %d messages", num_tf_msgs);
+
+    // wind the bag to begin
+    bag.seek(0);
     while (bag.has_next())
     {
         rosbag2_storage::SerializedBagMessageSharedPtr msg = bag.read_next();
 
-        if (msg->topic_name == "/genz/local_map") {
+        if (msg->topic_name == "/livox/pointcloud") {
             RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Received message on topic: /genz/local_map");
         
             rclcpp::SerializedMessage serialized_msg(*msg->serialized_data);
@@ -98,48 +133,56 @@ int main(int argc, char **argv)
                 RCLCPP_ERROR(rclcpp::get_logger("GenzFrame"), "Error: Empty PointCloud2 message!");
                 return 1;
             }
-    
-            pcl::PointCloud<pcl::PointXYZ> cloud;
-            size_t num_points = cloud_msg->width * cloud_msg->height;  // Suma punktów
-            uint8_t* data_ptr = cloud_msg->data.data();
-    
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processing %zu points", num_points);
-            
-            sensor_msgs::PointCloud2ConstIterator<float> iter_x(*cloud_msg, "x");
-            sensor_msgs::PointCloud2ConstIterator<float> iter_y(*cloud_msg, "y");
-            sensor_msgs::PointCloud2ConstIterator<float> iter_z(*cloud_msg, "z");
 
-            for (size_t i = 0; i < num_points; ++i, ++iter_x, ++iter_y, ++iter_z)
-            {
-                pcl::PointXYZ point;
-                point.x = *iter_x;
-                point.y = *iter_y;
-                point.z = *iter_z;
-            
-                cloud.points.push_back(point);
-            
-                Point3Di point_global;
-            
-                if (cloud_msg->header.stamp.sec != 0 || cloud_msg->header.stamp.nanosec != 0)
+            const size_t num_points = cloud_msg->width * cloud_msg->height;
+            const auto timestamp = cloud_msg->header.stamp;
+            const auto livox_frame_id = cloud_msg->header.frame_id;
+
+            // get tf from buffer
+            try {
+                const auto transform =  buffer.lookupTransform("odom", livox_frame_id, timestamp);
+                RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processing %zu points", num_points);
+
+                sensor_msgs::PointCloud2ConstIterator<float> iter_x(*cloud_msg, "x");
+                sensor_msgs::PointCloud2ConstIterator<float> iter_y(*cloud_msg, "y");
+                sensor_msgs::PointCloud2ConstIterator<float> iter_z(*cloud_msg, "z");
+
+                tf2::Transform tf;
+                tf2::fromMsg(transform.transform, tf);
+
+                for (size_t i = 0; i < num_points; ++i, ++iter_x, ++iter_y, ++iter_z)
                 {
-                    uint64_t sec_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1000ULL;
-                    uint64_t ns_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) / 1'000'000ULL;
-                    point_global.timestamp = sec_in_ms + ns_in_ms;
-                }
-            
-                point_global.point = Eigen::Vector3d(point.x, point.y, point.z);
-                point_global.intensity = 0;  
-                point_global.index_pose = static_cast<int>(i);
-                point_global.lidarid = 0;
-                point_global.index_point = static_cast<int>(i);
-            
-                points_global.push_back(point_global);
-            }
-            
+                    const tf2::Vector3 p_in(*iter_x, *iter_y, *iter_z);
+                    // transform point
+                    tf2::Vector3 p_out = tf * p_in;
 
-            RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processed %zu points!", cloud.points.size());
+                    Point3Di point_global;
+
+                    if (cloud_msg->header.stamp.sec != 0 || cloud_msg->header.stamp.nanosec != 0)
+                    {
+                        uint64_t sec_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.sec) * 1000ULL;
+                        uint64_t ns_in_ms = static_cast<uint64_t>(cloud_msg->header.stamp.nanosec) / 1'000'000ULL;
+                        point_global.timestamp = sec_in_ms + ns_in_ms;
+                    }
+
+                    point_global.point = Eigen::Vector3d(p_out.x(), p_out.y(), p_out.z());
+                    point_global.intensity = 0;
+                    point_global.index_pose = static_cast<int>(i);
+                    point_global.lidarid = 0;
+                    point_global.index_point = static_cast<int>(i);
+
+                    points_global.push_back(point_global);
+                }
+
+
+                RCLCPP_INFO(rclcpp::get_logger("GenzFrame"), "Processed %zu points!", num_points);
+            }
+            catch (tf2::TransformException &ex) {
+                RCLCPP_ERROR(rclcpp::get_logger("KissFrame"), "Failed to lookup transform: %s", ex.what());
+            }
+
         }
-        
+
         if (msg->topic_name == "/genz/odometry") {
             RCLCPP_INFO(rclcpp::get_logger("GenzOdometry"), "Received message on topic: /genz/odometry");
         
