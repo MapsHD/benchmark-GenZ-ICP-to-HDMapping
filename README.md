@@ -1,10 +1,14 @@
-# GenZ-ICP converter
+# [GENZ-ICP](https://github.com/cocel-postech/genz-icp) converter to [HDMapping](https://github.com/MapsHD/HDMapping)
+
+## Hint
+
+Please change branch to [Bunker-DVI-Dataset-reg-1](https://github.com/MapsHD/benchmark-GenZ-ICP-to-HDMapping/tree/Bunker-DVI-Dataset-reg-1) for quick experiment.  
 
 ## Intended use 
 
 This small toolset allows to integrate SLAM solution provided by [genz-icp](https://github.com/cocel-postech/genz-icp) with [HDMapping](https://github.com/MapsHD/HDMapping).
 This repository contains ROS 2 workspace that :
-  - submodule to tested revision of GenZ ICP
+  - submodule to tested revision of GenZ ICP 
   - a converter that listens to topics advertised from odometry node and save data in format compatible with HDMapping.
 
 ## Dependencies
