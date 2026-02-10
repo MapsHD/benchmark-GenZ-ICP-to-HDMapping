@@ -29,6 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python3 -m pip install --no-cache-dir colcon-common-extensions
 
+RUN python3 -m pip install "rosbags==0.10.5"
+
 WORKDIR /ros2_ws
 COPY ./src ./src
 
