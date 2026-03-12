@@ -9,7 +9,7 @@ BAG_OUTPUT_CONTAINER='/ros2_ws/recordings'
 RECORDED_BAG_NAME="recorded-genz-icp"
 HDMAPPING_OUT_NAME="output_hdmapping"
 
-TOPIC='/livox/pointcloud'
+TOPIC='/velodyne_points'
 
 usage() {
   echo "Usage:"
