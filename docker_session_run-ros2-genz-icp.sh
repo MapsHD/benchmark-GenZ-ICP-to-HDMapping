@@ -119,6 +119,9 @@ pkill ros2
 
 sleep 7
 pkill -f ros2 || true
+
+echo "[control] terminating tmux"
+tmux kill-server
 '\''
 
     tmux attach -t '"$TMUX_SESSION"'
